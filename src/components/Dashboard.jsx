@@ -15,11 +15,13 @@ import {
   AlertCircle,
   Database,
   User,
-  Target
+  Target,
+  Shield
 } from 'lucide-react';
 import { api } from '../services/api';
 import { subscribeUserToPush, isPushSubscribed } from '../utils/push';
 import SocialShareModal from './SocialShareModal';
+import GoalPrivacyModal from './GoalPrivacyModal';
 
 export default function Dashboard({
   activeGoal,
@@ -36,6 +38,7 @@ export default function Dashboard({
 
   // Modals & UI States
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showCreateGoalModal, setShowCreateGoalModal] = useState(false);
   const [newGoalTitle, setNewGoalTitle] = useState('');
@@ -242,7 +245,7 @@ export default function Dashboard({
                   const selected = goals.find((g) => g.id === e.target.value);
                   if (selected) onSelectGoal(selected);
                 }}
-                className="bg-transparent text-white font-bold outline-none cursor-pointer truncate max-w-[200px]"
+                className="bg-transparent text-white font-bold outline-none cursor-pointer truncate max-w-[150px]"
               >
                 {goals.map((g) => (
                   <option key={g.id} value={g.id} className="text-slate-800 font-medium">
@@ -251,12 +254,22 @@ export default function Dashboard({
                 ))}
               </select>
             </div>
-            <button
-              onClick={() => setShowCreateGoalModal(true)}
-              className="text-[11px] font-bold text-[#FFDDD2] hover:underline shrink-0"
-            >
-              + New Goal
-            </button>
+            <div className="flex items-center space-x-2 shrink-0">
+              <button
+                onClick={() => setShowPrivacyModal(true)}
+                className="flex items-center space-x-1 text-[11px] font-bold text-white bg-white/20 hover:bg-white/30 px-2 py-1 rounded-xl transition-all active:scale-95"
+                title="Goal Privacy & Squad Sharing"
+              >
+                <Shield className="w-3 h-3 text-[#FFDDD2]" />
+                <span>Share Settings</span>
+              </button>
+              <button
+                onClick={() => setShowCreateGoalModal(true)}
+                className="text-[11px] font-bold text-[#FFDDD2] hover:underline"
+              >
+                + New Goal
+              </button>
+            </div>
           </div>
         )}
 
@@ -541,6 +554,13 @@ export default function Dashboard({
         tasks={tasks}
         goalTitle={activeGoal?.title || 'Winter Ark Daily Goal'}
         streak={18}
+      />
+
+      {/* Granular Goal Privacy Modal */}
+      <GoalPrivacyModal
+        isOpen={showPrivacyModal}
+        onClose={() => setShowPrivacyModal(false)}
+        goal={activeGoal}
       />
     </div>
   );

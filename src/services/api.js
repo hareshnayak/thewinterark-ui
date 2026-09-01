@@ -19,9 +19,10 @@ apiClient.interceptors.request.use((config) => {
 });
 
 export const api = {
-  // Auth
+  // Auth & User Discovery
   login: (credentials) => apiClient.post('/api/v1/auth/login', credentials),
   register: (data) => apiClient.post('/api/v1/auth/register', data),
+  searchUsers: (query) => apiClient.get('/api/v1/users/search', { params: { username: query } }),
 
   // Goals
   getUserGoals: () => apiClient.get('/api/v1/goals'),
@@ -39,12 +40,33 @@ export const api = {
   addAdHocTask: (logId, taskContent) =>
     apiClient.post(`/api/v1/logs/${logId}/tasks/ad-hoc`, { taskContent }),
 
-  // Social & Nudges
-  getFriendGoals: (friendId) => apiClient.get(`/api/v1/friends/${friendId}/goals`),
-  remindFriend: (goalId, friendId) =>
-    apiClient.post(`/api/v1/goals/${goalId}/remind/${friendId}`),
+  // Friend Requests & Connections
+  sendFriendRequest: (targetUserId) =>
+    apiClient.post('/api/v1/friends/requests', { targetUserId }),
+  acceptFriendRequest: (userId) =>
+    apiClient.patch(`/api/v1/friends/requests/${userId}/accept`),
+  declineFriendRequest: (userId) =>
+    apiClient.delete(`/api/v1/friends/requests/${userId}`),
+  getPendingRequests: () =>
+    apiClient.get('/api/v1/friends/requests/pending'),
+  getFriends: () =>
+    apiClient.get('/api/v1/friends'),
+
+  // Granular Goal Sharing & Permissions
+  getGoalShares: (goalId) =>
+    apiClient.get(`/api/v1/goals/${goalId}/shares`),
   shareGoal: (goalId, friendId) =>
     apiClient.post(`/api/v1/goals/${goalId}/share`, { friendId }),
+  revokeGoalAccess: (goalId, friendId) =>
+    apiClient.delete(`/api/v1/goals/${goalId}/share/${friendId}`),
+
+  // Social Feed & Nudges
+  getSquadFeed: () =>
+    apiClient.get('/api/v1/friends/feed'),
+  getFriendGoals: (friendId) =>
+    apiClient.get(`/api/v1/friends/${friendId}/goals`),
+  remindFriend: (goalId, friendId) =>
+    apiClient.post(`/api/v1/goals/${goalId}/remind/${friendId}`),
 
   // Notifications
   subscribePush: (subscriptionPayload) =>
