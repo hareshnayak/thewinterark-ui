@@ -8,7 +8,7 @@ export default function SocialShareModal({
   goalTitle = 'Winter Ark Accountability',
   date = new Date().toISOString().split('T')[0],
   tasks = [],
-  streak = 14
+  streak = 0
 }) {
   const cardRef = useRef(null);
   const [isCapturing, setIsCapturing] = useState(false);

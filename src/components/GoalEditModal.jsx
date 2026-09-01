@@ -9,7 +9,9 @@ import {
   Loader2,
   Sparkles,
   Calendar,
-  AlertCircle
+  AlertCircle,
+  Archive,
+  Lock
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -23,10 +25,33 @@ const DAYS_OF_WEEK = [
   { key: 'SUNDAY', label: 'Sun' }
 ];
 
-export default function GoalEditModal({ isOpen, onClose, goal, onGoalUpdated }) {
+const formatDateForInput = (val, defaultFallback = '') => {
+  if (!val) return defaultFallback;
+  if (typeof val === 'string') {
+    return val.split('T')[0];
+  }
+  if (Array.isArray(val) && val.length >= 3) {
+    const y = val[0];
+    const m = String(val[1]).padStart(2, '0');
+    const d = String(val[2]).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return defaultFallback;
+};
+
+export default function GoalEditModal({
+  isOpen,
+  onClose,
+  goal,
+  onGoalUpdated,
+  onGoalDeleted
+}) {
   const [title, setTitle] = useState('');
   const [tagLine, setTagLine] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [activeDays, setActiveDays] = useState([]);
+  const [hasCompletedTasks, setHasCompletedTasks] = useState(false);
   const [predefinedTasks, setPredefinedTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -39,9 +64,30 @@ export default function GoalEditModal({ isOpen, onClose, goal, onGoalUpdated }) 
   useEffect(() => {
     if (!isOpen || !goal?.id) return;
 
+    const todayStr = new Date().toISOString().split('T')[0];
+    const rawStart = formatDateForInput(
+      goal.startDate,
+      goal.createdAt ? formatDateForInput(goal.createdAt, todayStr) : todayStr
+    );
+
+    const defaultEnd = (() => {
+      try {
+        const d = new Date(rawStart || todayStr);
+        d.setDate(d.getDate() + 90);
+        return d.toISOString().split('T')[0];
+      } catch (e) {
+        return todayStr;
+      }
+    })();
+
+    const rawEnd = formatDateForInput(goal.endDate, defaultEnd);
+
     setTitle(goal.title || '');
     setTagLine(goal.tagLine || '');
+    setStartDate(rawStart);
+    setEndDate(rawEnd);
     setActiveDays(goal.activeDays || DAYS_OF_WEEK.map((d) => d.key));
+    setHasCompletedTasks(Boolean(goal.hasCompletedTasks));
 
     const loadPredefined = async () => {
       setLoading(true);
@@ -58,7 +104,7 @@ export default function GoalEditModal({ isOpen, onClose, goal, onGoalUpdated }) 
     };
 
     loadPredefined();
-  }, [isOpen, goal?.id]);
+  }, [isOpen, goal?.id, goal?.hasCompletedTasks]);
 
   if (!isOpen) return null;
 
@@ -74,12 +120,20 @@ export default function GoalEditModal({ isOpen, onClose, goal, onGoalUpdated }) 
 
     setIsSaving(true);
     try {
-      const res = await api.updateGoal(goal.id, {
+      const payload = {
         title: title.trim(),
         tagLine: tagLine.trim(),
-        activeDays
-      });
-      setFeedback('Goal settings saved!');
+        activeDays,
+        endDate: endDate || null
+      };
+
+      // Only send startDate if not locked
+      if (!hasCompletedTasks && startDate) {
+        payload.startDate = startDate;
+      }
+
+      const res = await api.updateGoal(goal.id, payload);
+      setFeedback('Goal settings & schedule saved! ✅');
       if (onGoalUpdated) onGoalUpdated(res.data);
     } catch (err) {
       console.error('Failed to update goal', err);
@@ -87,6 +141,35 @@ export default function GoalEditModal({ isOpen, onClose, goal, onGoalUpdated }) 
     } finally {
       setIsSaving(false);
       setTimeout(() => setFeedback(null), 3000);
+    }
+  };
+
+  const handleArchiveGoal = async () => {
+    if (!confirm(`Are you sure you want to archive "${goal.title}"? It will be hidden from your active dashboard.`)) return;
+
+    try {
+      await api.archiveGoal(goal.id);
+      alert(`Goal "${goal.title}" has been archived.`);
+      if (onGoalDeleted) onGoalDeleted(goal.id);
+      onClose();
+    } catch (err) {
+      console.error('Failed to archive goal', err);
+      alert('Error archiving goal: ' + (err.response?.data?.message || err.message));
+    }
+  };
+
+  const handleDeleteGoal = async () => {
+    const confirmation = confirm(`⚠️ Are you sure you want to PERMANENTLY DELETE "${goal.title}"?\n\nAll tasks, daily logs, and historical statistics will be completely erased. This action cannot be undone.`);
+    if (!confirmation) return;
+
+    try {
+      await api.deleteGoal(goal.id);
+      alert(`Goal "${goal.title}" has been deleted.`);
+      if (onGoalDeleted) onGoalDeleted(goal.id);
+      onClose();
+    } catch (err) {
+      console.error('Failed to delete goal', err);
+      alert('Error deleting goal: ' + (err.response?.data?.message || err.message));
     }
   };
 
@@ -192,10 +275,10 @@ export default function GoalEditModal({ isOpen, onClose, goal, onGoalUpdated }) 
             </div>
           )}
 
-          {/* Section 1: Goal Details & Active Days */}
+          {/* Section 1: Goal Details & Schedule Dates */}
           <form onSubmit={handleSaveGoalMeta} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 space-y-3">
             <h4 className="text-xs font-extrabold text-[#006D77] uppercase tracking-wider">
-              Goal Schedule & Frequency
+              Goal Schedule & Dates
             </h4>
 
             <div>
@@ -211,6 +294,58 @@ export default function GoalEditModal({ isOpen, onClose, goal, onGoalUpdated }) 
               />
             </div>
 
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                Motto / Subtitle
+              </label>
+              <input
+                type="text"
+                value={tagLine}
+                onChange={(e) => setTagLine(e.target.value)}
+                placeholder="e.g. Forged in discipline"
+                className="w-full px-3 py-2 rounded-xl bg-[#EDF6F9] border border-[#83C5BE]/30 text-xs font-semibold text-slate-800"
+              />
+            </div>
+
+            {/* Start Date & End Date Grid */}
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  Start Date {hasCompletedTasks && <Lock className="w-2.5 h-2.5 inline text-amber-600 mb-0.5" />}
+                </label>
+                <input
+                  type="date"
+                  value={startDate}
+                  disabled={hasCompletedTasks}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className={`w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold ${
+                    hasCompletedTasks
+                      ? 'bg-gray-100 text-slate-400 border-gray-200 cursor-not-allowed'
+                      : 'bg-[#EDF6F9] border-[#83C5BE]/30 text-slate-800'
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  End Date
+                </label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-xl bg-[#EDF6F9] border border-[#83C5BE]/30 text-xs font-semibold text-slate-800"
+                />
+              </div>
+            </div>
+
+            {hasCompletedTasks && (
+              <p className="text-[10px] text-amber-700 font-medium bg-amber-50 px-2.5 py-1.5 rounded-xl border border-amber-200/60">
+                🔒 Start date cannot be modified because tasks have already been completed.
+              </p>
+            )}
+
+            {/* Active Days */}
             <div>
               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
                 Active Days ({activeDays.length}/7 Days Active)
@@ -239,9 +374,9 @@ export default function GoalEditModal({ isOpen, onClose, goal, onGoalUpdated }) 
             <button
               type="submit"
               disabled={isSaving}
-              className="w-full py-2 rounded-xl bg-[#006D77] hover:bg-[#04434B] text-white font-bold text-xs shadow-xs disabled:opacity-50"
+              className="w-full py-2 rounded-xl bg-[#006D77] hover:bg-[#04434B] text-white font-bold text-xs shadow-xs disabled:opacity-50 cursor-pointer"
             >
-              {isSaving ? 'Saving...' : 'Update Schedule'}
+              {isSaving ? 'Saving...' : 'Update Schedule & Dates'}
             </button>
           </form>
 
@@ -337,12 +472,37 @@ export default function GoalEditModal({ isOpen, onClose, goal, onGoalUpdated }) 
               <button
                 type="submit"
                 disabled={!newTaskContent.trim()}
-                className="px-3.5 py-2 rounded-xl bg-[#006D77] hover:bg-[#04434B] text-white text-xs font-bold transition-colors disabled:opacity-50 flex items-center space-x-1"
+                className="px-3.5 py-2 rounded-xl bg-[#006D77] hover:bg-[#04434B] text-white text-xs font-bold transition-colors disabled:opacity-50 flex items-center space-x-1 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add</span>
               </button>
             </form>
+          </div>
+
+          {/* Section 3: Goal Lifecycle Management (Archive & Delete) */}
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 space-y-2.5">
+            <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">
+              Goal Management
+            </h4>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={handleArchiveGoal}
+                className="flex items-center justify-center space-x-1.5 py-2 px-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all cursor-pointer"
+              >
+                <Archive className="w-3.5 h-3.5 text-slate-500" />
+                <span>Archive Goal</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteGoal}
+                className="flex items-center justify-center space-x-1.5 py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold transition-all cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                <span>Delete Goal</span>
+              </button>
+            </div>
           </div>
         </div>
 

@@ -250,7 +250,7 @@ export default function Friends({ activeGoal }) {
                       </div>
                       <div className="flex items-center space-x-1 px-2.5 py-1 rounded-full bg-[#EDF6F9] text-[#006D77] text-xs font-bold shrink-0">
                         <Flame className="w-3.5 h-3.5 text-[#E29578] fill-[#E29578]" />
-                        <span>{item.streakDays || 12}d</span>
+                        <span>{item.streakDays ?? 0}d</span>
                       </div>
                     </div>
 

@@ -54,9 +54,15 @@ function TrackerLayout() {
   }, [user?.id, isAuthenticated]);
 
   const handleGoalCreated = (newGoal) => {
-    setGoals([newGoal]);
+    setGoals((prev) => [...prev, newGoal]);
     setActiveGoal(newGoal);
     setCurrentTab('dashboard');
+  };
+
+  const handleGoalDeleted = (deletedId) => {
+    const remaining = goals.filter((g) => g.id !== deletedId);
+    setGoals(remaining);
+    setActiveGoal(remaining.length > 0 ? remaining[0] : null);
   };
 
   if (loading) {
@@ -82,6 +88,7 @@ function TrackerLayout() {
             activeGoal={activeGoal}
             goals={goals}
             onSelectGoal={setActiveGoal}
+            onGoalDeleted={handleGoalDeleted}
             user={user}
           />
         )}

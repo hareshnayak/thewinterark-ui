@@ -38,7 +38,7 @@ export async function subscribeUserToPush(vapidPublicKey = DEFAULT_VAPID_PUBLIC_
   // 1. Request notification permission
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') {
-    throw new Error('Notification permission was denied.');
+    throw new Error('Notification permission is blocked. Please allow notifications in your browser site settings (lock/tune icon near URL bar).');
   }
 
   // 2. Wait for Service Worker registration

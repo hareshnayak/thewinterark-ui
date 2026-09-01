@@ -14,10 +14,17 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialIsLog
     setIsLogin(initialIsLogin);
   }, [initialIsLogin]);
 
-  if (!isOpen) return null;
-
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!isLogin) {
+      const emailRegex = /^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+      if (!email || !emailRegex.test(email.trim())) {
+        setError('Please enter a valid email address (e.g. name@example.com)');
+        return;
+      }
+    }
+
     setLoading(true);
     setError(null);
 
@@ -103,6 +110,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialIsLog
       setLoading(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
