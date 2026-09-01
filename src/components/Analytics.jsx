@@ -42,9 +42,10 @@ export default function Analytics({ activeGoal }) {
         if (response.data && response.data.length > 0) {
           const formatted = response.data.map((item) => ({
             date: item.date ? (typeof item.date === 'string' ? item.date.slice(5) : item.date) : '',
-            percentage: item.completionPercent ?? item.completionPercentage ?? 0,
+            percentage: item.completionPercent ?? 0,
             fullDate: item.date
           }));
+
           setStatsData(formatted);
         } else {
           // If no logs yet for this goal in PostgreSQL, show clean empty state

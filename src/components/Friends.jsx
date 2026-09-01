@@ -14,31 +14,49 @@ import {
 import { api } from '../services/api';
 
 export default function Friends({ activeGoal }) {
-  const [friends, setFriends] = useState([
-    {
-      friendId: '22222222-2222-2222-2222-222222222222',
-      username: 'marcus_v',
-      goalTitle: 'Spartan Strength & Conditioning',
-      completionPercentage: 100,
-      tasksCompleted: 4,
-      totalTasks: 4,
-      streakDays: 24
-    },
-    {
-      friendId: '33333333-3333-3333-3333-333333333333',
-      username: 'elena_snow',
-      goalTitle: 'Morning Deep Work & Calisthenics',
-      completionPercentage: 25,
-      tasksCompleted: 1,
-      totalTasks: 4,
-      streakDays: 8
-    }
-  ]);
+  const [friends, setFriends] = useState([]);
   const [loading, setLoading] = useState(false);
   const [nudgingFriendId, setNudgingFriendId] = useState(null);
   const [nudgeFeedback, setNudgeFeedback] = useState({});
 
+  // Fetch friends' shared goal progress from live backend
+  useEffect(() => {
+    const stored = localStorage.getItem('user');
+    if (!stored) return;
+
+    const currentUser = JSON.parse(stored);
+    if (!currentUser?.id) return;
+
+    const fetchFriendGoals = async () => {
+      setLoading(true);
+      try {
+        // GET /api/v1/friends/{friendId}/goals — returns SharedGoalResponseDTO[]
+        const response = await api.getFriendGoals(currentUser.id);
+        const data = response.data || [];
+        // Map SharedGoalResponseDTO { goalId, title, todayProgressPercent } to display model
+        const mapped = data.map((item) => ({
+          friendId: item.goalId, // used as key for nudge actions
+          username: item.title,  // goal title displayed as name
+          goalTitle: item.title,
+          completionPercentage: item.todayProgressPercent ?? 0,
+          tasksCompleted: null,
+          totalTasks: null,
+          streakDays: null
+        }));
+        setFriends(mapped);
+      } catch (err) {
+        console.error('Failed to fetch friend goals', err);
+        setFriends([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchFriendGoals();
+  }, []);
+
   const handleNudgeFriend = async (friendId, username) => {
+
     if (!activeGoal?.id) {
       alert('Please select or create an active goal first.');
       return;
@@ -118,6 +136,14 @@ export default function Friends({ activeGoal }) {
               <Loader2 className="w-6 h-6 animate-spin text-[#006D77]" />
               <p className="text-xs text-slate-500">Checking squad activity...</p>
             </div>
+          ) : friends.length === 0 ? (
+            <div className="bg-white rounded-3xl p-8 text-center border border-dashed border-gray-200">
+              <Users className="w-8 h-8 text-[#83C5BE] mx-auto mb-2" />
+              <p className="text-sm font-bold text-slate-700">No shared goals yet</p>
+              <p className="text-xs text-slate-400 mt-1">
+                Share a goal with a friend to see their progress here.
+              </p>
+            </div>
           ) : (
             friends.map((friend) => {
               const isLagging = friend.completionPercentage < 50;
@@ -148,7 +174,11 @@ export default function Friends({ activeGoal }) {
 
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between text-xs font-bold">
-                      <span className="text-slate-500">{friend.tasksCompleted} of {friend.totalTasks} Tasks</span>
+                      <span className="text-slate-500">
+                        {friend.tasksCompleted != null && friend.totalTasks != null
+                          ? `${friend.tasksCompleted} of ${friend.totalTasks} Tasks`
+                          : 'Today\'s Progress'}
+                      </span>
                       <span className={isFinished ? 'text-emerald-600' : isLagging ? 'text-amber-600' : 'text-[#006D77]'}>
                         {friend.completionPercentage}%
                       </span>

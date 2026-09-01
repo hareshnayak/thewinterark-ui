@@ -1,4 +1,4 @@
-import axios from 'axios';
+import apiClient from '../services/api';
 
 /**
  * Converts a URL-safe Base64 string to a Uint8Array for VAPID applicationServerKey.
@@ -27,13 +27,10 @@ const DEFAULT_VAPID_PUBLIC_KEY =
 
 /**
  * Prompts user for notification permission, subscribes via ServiceWorker PushManager,
- * and POSTs subscription JSON to Spring Boot backend.
+ * and POSTs subscription JSON to Spring Boot backend using the shared apiClient
+ * (which automatically applies VITE_API_BASE_URL and the JWT Bearer token).
  */
-export async function subscribeUserToPush(
-  apiBaseUrl = 'http://localhost:8080',
-  vapidPublicKey = DEFAULT_VAPID_PUBLIC_KEY,
-  authToken = null
-) {
+export async function subscribeUserToPush(vapidPublicKey = DEFAULT_VAPID_PUBLIC_KEY) {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     throw new Error('Push notifications are not supported in this browser.');
   }
@@ -67,18 +64,8 @@ export async function subscribeUserToPush(
     }
   };
 
-  // 5. Send subscription to Spring Boot backend
-  const token = authToken || localStorage.getItem('token');
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {})
-  };
-
-  const response = await axios.post(
-    `${apiBaseUrl}/api/v1/notifications/subscribe`,
-    payload,
-    { headers }
-  );
+  // 5. Send subscription to backend via shared apiClient (uses VITE_API_BASE_URL + JWT)
+  const response = await apiClient.post('/api/v1/notifications/subscribe', payload);
 
   return { subscription, status: response.status };
 }
@@ -91,3 +78,4 @@ export async function isPushSubscribed() {
   const subscription = await registration.pushManager.getSubscription();
   return subscription !== null;
 }
+
