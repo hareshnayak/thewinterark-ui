@@ -88,7 +88,7 @@ flowchart TD
     subgraph Dashboard Interactions
         MainDashboard -->|Date Nav Arrows| FetchDateLog[GET /api/v1/goals/:id/logs?date=YYYY-MM-DD]
         MainDashboard -->|Toggle Task Checkbox| ToggleTask[PATCH /api/v1/tasks/:id/toggle]
-        MainDashboard -->|FAB (+) Button| AddAdHoc[POST /api/v1/logs/:id/tasks/ad-hoc]
+        MainDashboard -->|FAB _+_ Button| AddAdHoc[POST /api/v1/logs/:id/tasks/ad-hoc]
         MainDashboard -->|'+ New Goal' Button| CreateGoal[POST /api/v1/goals]
         MainDashboard -->|Bell Icon| EnablePush[POST /api/v1/notifications/subscribe]
         ToggleTask -->|All Tasks Complete 100%| ShareModal[Social Share Card Modal]
