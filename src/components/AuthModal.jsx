@@ -1,14 +1,18 @@
-import React, { useState } from 'react';
-import { Flame, Lock, User, Mail, Sparkles, Loader2, CheckCircle2, ShieldAlert } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Flame, Lock, User, Mail, Sparkles, Loader2, ShieldAlert, X } from 'lucide-react';
 import { api } from '../services/api';
 
-export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
-  const [isLogin, setIsLogin] = useState(false);
+export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialIsLogin = false }) {
+  const [isLogin, setIsLogin] = useState(initialIsLogin);
   const [username, setUsername] = useState('winter_warrior');
   const [email, setEmail] = useState('warrior@winterark.com');
   const [password, setPassword] = useState('winter1234');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setIsLogin(initialIsLogin);
+  }, [initialIsLogin]);
 
   if (!isOpen) return null;
 
@@ -27,20 +31,19 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
 
       const { token, id, username: uname } = res.data;
       localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify({ id, username: uname }));
-      
-      onAuthSuccess({ token, id, username: uname });
+      localStorage.setItem('user', JSON.stringify({ id, username: uname, email }));
+
+      onAuthSuccess({ token, id, username: uname, email });
       onClose();
     } catch (err) {
       console.error('Auth failed', err);
-      // If user already exists on register, attempt login
       if (!isLogin && err.response?.status === 500) {
         try {
           const loginRes = await api.login({ username, password });
           const { token, id, username: uname } = loginRes.data;
           localStorage.setItem('token', token);
-          localStorage.setItem('user', JSON.stringify({ id, username: uname }));
-          onAuthSuccess({ token, id, username: uname });
+          localStorage.setItem('user', JSON.stringify({ id, username: uname, email }));
+          onAuthSuccess({ token, id, username: uname, email });
           onClose();
           return;
         } catch (loginErr) {
@@ -71,7 +74,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
 
       const { token, id, username: uname } = authRes.data;
       localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify({ id, username: uname }));
+      localStorage.setItem('user', JSON.stringify({ id, username: uname, email: demoEmail }));
 
       // 2. Create Real Goal in PostgreSQL
       const goalRes = await api.createGoal({
@@ -91,7 +94,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
       const today = new Date().toISOString().split('T')[0];
       await api.getDailyLog(goalId, today);
 
-      onAuthSuccess({ token, id, username: uname, activeGoalId: goalId });
+      onAuthSuccess({ token, id, username: uname, email: demoEmail, activeGoalId: goalId });
       onClose();
     } catch (err) {
       console.error('Quick seed failed', err);
@@ -104,6 +107,15 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
       <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-gray-100 relative">
+        {/* Close Button (X) */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+          aria-label="Close"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
         {/* Header */}
         <div className="text-center mb-5">
           <div className="w-12 h-12 rounded-2xl bg-[#006D77] flex items-center justify-center mx-auto mb-2 text-white shadow-md">
@@ -182,7 +194,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 rounded-xl bg-[#006D77] hover:bg-[#04434B] text-white font-bold text-sm transition-all shadow-md active:scale-95 disabled:opacity-50 flex items-center justify-center space-x-2"
+            className="w-full py-3 rounded-xl bg-[#006D77] hover:bg-[#04434B] text-white font-bold text-sm transition-all shadow-md active:scale-95 disabled:opacity-50 flex items-center justify-center space-x-2 cursor-pointer"
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
             <span>{isLogin ? 'Sign In' : 'Create Account'}</span>
@@ -195,7 +207,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
             type="button"
             onClick={handleQuickSeedDemo}
             disabled={loading}
-            className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-[#E29578] to-[#006D77] text-white font-bold text-xs hover:opacity-95 transition-all shadow-sm flex items-center justify-center space-x-2 active:scale-95"
+            className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-[#E29578] to-[#006D77] text-white font-bold text-xs hover:opacity-95 transition-all shadow-sm flex items-center justify-center space-x-2 active:scale-95 cursor-pointer"
           >
             <Sparkles className="w-4 h-4 text-[#FFDDD2]" />
             <span>One-Click Live Backend Setup</span>
@@ -213,7 +225,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
               setIsLogin(!isLogin);
               setError(null);
             }}
-            className="text-xs font-bold text-[#006D77] hover:underline"
+            className="text-xs font-bold text-[#006D77] hover:underline cursor-pointer"
           >
             {isLogin ? "Don't have an account? Register" : 'Already have an account? Sign In'}
           </button>

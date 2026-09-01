@@ -18,7 +18,11 @@ import {
   Zap,
   Loader2,
   Database,
-  AlertCircle
+  AlertCircle,
+  FastForward,
+  ChevronDown,
+  ChevronUp,
+  Clock
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -27,6 +31,11 @@ export default function Analytics({ activeGoal }) {
   const [statsData, setStatsData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // Skipped Tasks State
+  const [showSkipped, setShowSkipped] = useState(false);
+  const [skippedTasks, setSkippedTasks] = useState([]);
+  const [skippedLoading, setSkippedLoading] = useState(false);
 
   useEffect(() => {
     if (!activeGoal?.id) {
@@ -48,7 +57,6 @@ export default function Analytics({ activeGoal }) {
 
           setStatsData(formatted);
         } else {
-          // If no logs yet for this goal in PostgreSQL, show clean empty state
           setStatsData([]);
         }
       } catch (err) {
@@ -63,7 +71,32 @@ export default function Analytics({ activeGoal }) {
     fetchStats();
   }, [activeGoal?.id, daysRange]);
 
-  // Aggregate Metrics
+  // Fetch Skipped Tasks when toggle is activated
+  const handleToggleSkipped = async () => {
+    const nextState = !showSkipped;
+    setShowSkipped(nextState);
+
+    if (nextState && activeGoal?.id) {
+      setSkippedLoading(true);
+      try {
+        const res = await api.getSkippedTasks(activeGoal.id);
+        setSkippedTasks(res.data || []);
+      } catch (err) {
+        console.error('Failed to load skipped tasks', err);
+      } finally {
+        setSkippedLoading(false);
+      }
+    }
+  };
+
+  // Group skipped tasks by date
+  const groupedSkipped = skippedTasks.reduce((acc, task) => {
+    const d = task.targetDate || 'Past';
+    if (!acc[d]) acc[d] = [];
+    acc[d].push(task);
+    return acc;
+  }, {});
+
   const avgCompletion = statsData.length
     ? Math.round(statsData.reduce((acc, curr) => acc + curr.percentage, 0) / statsData.length)
     : 0;
@@ -98,7 +131,7 @@ export default function Analytics({ activeGoal }) {
             </div>
             <div>
               <h1 className="text-lg font-black tracking-tight text-white">Performance Analytics</h1>
-              <p className="text-[11px] text-[#83C5BE] font-semibold tracking-wide">
+              <p className="text-[11px] text-[#83C5BE] font-semibold tracking-wide truncate max-w-[180px]">
                 {activeGoal ? activeGoal.title : 'NO ACTIVE GOAL'}
               </p>
             </div>
@@ -109,7 +142,7 @@ export default function Analytics({ activeGoal }) {
               <button
                 key={range}
                 onClick={() => setDaysRange(range)}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
+                className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                   daysRange === range
                     ? 'bg-white text-[#006D77] shadow-sm'
                     : 'text-white/80 hover:text-white'
@@ -169,19 +202,19 @@ export default function Analytics({ activeGoal }) {
                 </div>
                 <div>
                   <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Data Source</p>
-                  <h4 className="text-xs font-black text-slate-800">PostgreSQL</h4>
+                  <h4 className="text-xs font-black text-slate-800">PostgreSQL Live</h4>
                 </div>
               </div>
             </div>
 
-            {/* 30-Day Line Chart Card */}
+            {/* Completion Trend Area Chart */}
             <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-sm font-extrabold text-[#006D77] uppercase tracking-wider">
-                    PostgreSQL Completion Trend
+                    Discipline Trend
                   </h3>
-                  <p className="text-xs text-slate-400 font-medium">Live logs queried from backend</p>
+                  <p className="text-xs text-slate-400 font-medium">Daily completion percentages</p>
                 </div>
                 <span className="text-xs font-bold text-[#006D77] bg-[#EDF6F9] px-2.5 py-1 rounded-xl">
                   {daysRange}D Window
@@ -196,9 +229,9 @@ export default function Analytics({ activeGoal }) {
               ) : statsData.length === 0 ? (
                 <div className="h-56 flex flex-col items-center justify-center text-center p-4 border border-dashed border-gray-100 rounded-2xl">
                   <TrendingUp className="w-8 h-8 text-slate-300 mb-2" />
-                  <p className="text-xs font-bold text-slate-600">No logs recorded yet for this timeframe</p>
+                  <p className="text-xs font-bold text-slate-600">No logs recorded yet</p>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    Complete tasks on the Checklist tab to populate your live graph!
+                    Complete daily tasks on the Checklist tab to populate your graph!
                   </p>
                 </div>
               ) : (
@@ -238,6 +271,85 @@ export default function Analytics({ activeGoal }) {
                       />
                     </AreaChart>
                   </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
+            {/* Skipped Tasks History Section */}
+            <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-8 h-8 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
+                    <FastForward className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
+                      Historical Skipped Tasks
+                    </h4>
+                    <p className="text-[10px] text-slate-400">Past missed or intentionally skipped goals</p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleToggleSkipped}
+                  className="flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-[#EDF6F9] hover:bg-[#83C5BE]/20 text-[#006D77] font-bold text-xs transition-all cursor-pointer"
+                >
+                  <span>{showSkipped ? 'Hide' : 'Show Skipped'}</span>
+                  {showSkipped ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+
+              {showSkipped && (
+                <div className="pt-2 border-t border-gray-100 space-y-3 animate-fade-in">
+                  {skippedLoading ? (
+                    <div className="flex flex-col items-center justify-center py-6 space-y-2">
+                      <Loader2 className="w-5 h-5 animate-spin text-[#006D77]" />
+                      <p className="text-xs text-slate-400">Loading historical skipped tasks...</p>
+                    </div>
+                  ) : Object.keys(groupedSkipped).length === 0 ? (
+                    <div className="p-4 rounded-2xl bg-[#EDF6F9]/50 text-center border border-dashed border-[#83C5BE]/30">
+                      <p className="text-xs font-bold text-[#006D77]">Zero Skipped Tasks! 🔥</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        You have completed all scheduled tasks or have no skipped logs recorded.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {Object.entries(groupedSkipped).map(([dateStr, items]) => (
+                        <div
+                          key={dateStr}
+                          className="p-3.5 rounded-2xl bg-amber-50/50 border border-amber-200/50 space-y-2"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-1.5 text-xs font-extrabold text-amber-800">
+                              <Clock className="w-3.5 h-3.5 text-amber-600" />
+                              <span>{dateStr}</span>
+                            </div>
+                            <span className="text-[10px] font-black text-amber-700 bg-amber-100 px-2 py-0.5 rounded-md">
+                              {items.length} Skipped
+                            </span>
+                          </div>
+
+                          <div className="space-y-1 pl-1">
+                            {items.map((task) => (
+                              <div
+                                key={task.taskId}
+                                className="flex items-center space-x-2 text-xs text-slate-600"
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                                <span className="line-through text-slate-500">{task.taskContent}</span>
+                                {task.isAdHoc && (
+                                  <span className="text-[9px] font-bold text-[#E29578] bg-[#FFDDD2]/60 px-1.5 py-0.2 rounded">
+                                    Ad-Hoc
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

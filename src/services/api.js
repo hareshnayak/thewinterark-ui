@@ -27,18 +27,28 @@ export const api = {
   // Goals
   getUserGoals: () => apiClient.get('/api/v1/goals'),
   createGoal: (goalData) => apiClient.post('/api/v1/goals', goalData),
+  updateGoal: (goalId, goalData) => apiClient.put(`/api/v1/goals/${goalId}`, goalData),
+  getPredefinedTasks: (goalId) => apiClient.get(`/api/v1/goals/${goalId}/predefined-tasks`),
   addPredefinedTask: (goalId, taskData) =>
     apiClient.post(`/api/v1/goals/${goalId}/predefined-tasks`, taskData),
+  updatePredefinedTask: (goalId, taskId, taskData) =>
+    apiClient.put(`/api/v1/goals/${goalId}/predefined-tasks/${taskId}`, taskData),
+  deletePredefinedTask: (goalId, taskId) =>
+    apiClient.delete(`/api/v1/goals/${goalId}/predefined-tasks/${taskId}`),
   getGoalStats: (goalId, days = 30) =>
     apiClient.get(`/api/v1/goals/${goalId}/stats`, { params: { days } }),
 
-  // Daily Logs & Tasks
+  // Daily Logs & Task Statuses
   getDailyLog: (goalId, dateStr) =>
     apiClient.get(`/api/v1/goals/${goalId}/logs`, { params: { date: dateStr } }),
+  updateTaskStatus: (taskId, status) =>
+    apiClient.patch(`/api/v1/tasks/${taskId}/status`, { status }),
   toggleTask: (taskId, isCompleted) =>
     apiClient.patch(`/api/v1/tasks/${taskId}/toggle`, { isCompleted }),
   addAdHocTask: (logId, taskContent) =>
     apiClient.post(`/api/v1/logs/${logId}/tasks/ad-hoc`, { taskContent }),
+  getSkippedTasks: (goalId) =>
+    apiClient.get(`/api/v1/goals/${goalId}/skipped-tasks`),
 
   // Friend Requests & Connections
   sendFriendRequest: (targetUserId) =>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   CheckCircle2,
   Circle,
@@ -16,20 +17,32 @@ import {
   Database,
   User,
   Target,
-  Shield
+  Shield,
+  FastForward,
+  RotateCcw,
+  Settings,
+  Moon,
+  Coffee,
+  Check
 } from 'lucide-react';
 import { api } from '../services/api';
 import { subscribeUserToPush, isPushSubscribed } from '../utils/push';
+import { useAuth } from '../context/AuthContext';
 import SocialShareModal from './SocialShareModal';
 import GoalPrivacyModal from './GoalPrivacyModal';
+import GoalEditModal from './GoalEditModal';
 
 export default function Dashboard({
   activeGoal,
   goals = [],
   onSelectGoal,
   onOpenAuth,
-  user
+  user: propUser
 }) {
+  const navigate = useNavigate();
+  const { user: authUser, isAuthenticated } = useAuth();
+  const user = authUser || propUser;
+
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [dailyLog, setDailyLog] = useState(null);
   const [tasks, setTasks] = useState([]);
@@ -39,6 +52,7 @@ export default function Dashboard({
   // Modals & UI States
   const [showShareModal, setShowShareModal] = useState(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [showGoalEditModal, setShowGoalEditModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showCreateGoalModal, setShowCreateGoalModal] = useState(false);
   const [newGoalTitle, setNewGoalTitle] = useState('');
@@ -79,31 +93,58 @@ export default function Dashboard({
     fetchTasks();
   }, [selectedDate, activeGoal?.id]);
 
-  // Task Toggle with Optimistic UI Update -> PATCH /api/v1/tasks/{taskId}/toggle
+  // Task Completion Toggle -> PATCH /api/v1/tasks/{taskId}/status
   const handleToggleTask = async (task) => {
     const taskId = task.taskId || task.id;
-    const currentCompleted = task.isCompleted;
-    const targetStatus = !currentCompleted;
+    const isCurrentlyDone = task.status === 'COMPLETED' || task.isCompleted;
+    const targetStatus = isCurrentlyDone ? 'PENDING' : 'COMPLETED';
 
-    // 1. Optimistic local update
+    // Optimistic local update
     const previousTasks = [...tasks];
     const updatedTasks = tasks.map((t) =>
-      (t.taskId === taskId || t.id === taskId) ? { ...t, isCompleted: targetStatus } : t
+      (t.taskId === taskId || t.id === taskId)
+        ? { ...t, status: targetStatus, isCompleted: targetStatus === 'COMPLETED' }
+        : t
     );
     setTasks(updatedTasks);
 
-    // Trigger Social Share modal if all are completed
-    const allDone = updatedTasks.length > 0 && updatedTasks.every((t) => t.isCompleted);
-    if (allDone && !currentCompleted) {
+    // Trigger Social Share modal if all active tasks are completed
+    const allDone =
+      updatedTasks.length > 0 &&
+      updatedTasks.every((t) => t.status === 'COMPLETED' || t.isCompleted);
+    if (allDone && !isCurrentlyDone) {
       setTimeout(() => setShowShareModal(true), 400);
     }
 
-    // 2. Call backend PATCH endpoint
     try {
-      await api.toggleTask(taskId, targetStatus);
+      await api.updateTaskStatus(taskId, targetStatus);
       setBackendConnected(true);
     } catch (err) {
-      console.error('Failed to toggle task, rolling back', err);
+      console.error('Failed to toggle task status, rolling back', err);
+      setTasks(previousTasks);
+    }
+  };
+
+  // Task Skip Action -> PATCH /api/v1/tasks/{taskId}/status (SKIPPED)
+  const handleSkipTask = async (task, e) => {
+    e.stopPropagation();
+    const taskId = task.taskId || task.id;
+    const isCurrentlySkipped = task.status === 'SKIPPED';
+    const targetStatus = isCurrentlySkipped ? 'PENDING' : 'SKIPPED';
+
+    const previousTasks = [...tasks];
+    const updatedTasks = tasks.map((t) =>
+      (t.taskId === taskId || t.id === taskId)
+        ? { ...t, status: targetStatus, isCompleted: false }
+        : t
+    );
+    setTasks(updatedTasks);
+
+    try {
+      await api.updateTaskStatus(taskId, targetStatus);
+      setBackendConnected(true);
+    } catch (err) {
+      console.error('Failed to skip task, rolling back', err);
       setTasks(previousTasks);
     }
   };
@@ -136,11 +177,10 @@ export default function Dashboard({
     try {
       const res = await api.createGoal({ title: newGoalTitle.trim() });
       const newGoal = res.data;
-      // Add default starter tasks
       await api.addPredefinedTask(newGoal.id, { taskContent: '60 Min Morning Workout' });
       await api.addPredefinedTask(newGoal.id, { taskContent: 'Read 20 pages' });
       await api.addPredefinedTask(newGoal.id, { taskContent: 'Zero Processed Sugar' });
-      
+
       onSelectGoal(newGoal);
       setShowCreateGoalModal(false);
       setNewGoalTitle('');
@@ -151,7 +191,7 @@ export default function Dashboard({
     }
   };
 
-  // Push Subscription Trigger -> POST /api/v1/notifications/subscribe
+  // Push Subscription Trigger
   const handleEnablePush = async () => {
     setPushLoading(true);
     try {
@@ -166,9 +206,12 @@ export default function Dashboard({
   };
 
   // Calculations
-  const completedCount = tasks.filter((t) => t.isCompleted).length;
+  const completedCount = tasks.filter((t) => t.status === 'COMPLETED' || t.isCompleted).length;
+  const skippedCount = tasks.filter((t) => t.status === 'SKIPPED').length;
   const totalCount = tasks.length;
   const percentage = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+  const isRestDay = Boolean(dailyLog?.isRestDay || dailyLog?.restDay);
 
   const radius = 48;
   const circumference = 2 * Math.PI * radius;
@@ -202,11 +245,19 @@ export default function Dashboard({
           </div>
 
           <div className="flex items-center space-x-2">
-            {/* User Account / Login Button */}
+            {/* User Account / Profile Navigation Button */}
             <button
-              onClick={onOpenAuth}
-              className="p-2 rounded-xl bg-white/15 hover:bg-white/25 text-white transition-all backdrop-blur-md flex items-center space-x-1 text-xs font-bold"
-              title="Account & Live DB Setup"
+              onClick={() => {
+                if (user || isAuthenticated) {
+                  navigate('/profile');
+                } else if (onOpenAuth) {
+                  onOpenAuth();
+                } else {
+                  navigate('/');
+                }
+              }}
+              className="p-2 rounded-xl bg-white/15 hover:bg-white/25 text-white transition-all backdrop-blur-md flex items-center space-x-1 text-xs font-bold cursor-pointer active:scale-95"
+              title={user ? 'View Warrior Profile' : 'Sign In'}
             >
               <User className="w-4 h-4" />
               <span>{user ? 'Account' : 'Sign In'}</span>
@@ -245,7 +296,7 @@ export default function Dashboard({
                   const selected = goals.find((g) => g.id === e.target.value);
                   if (selected) onSelectGoal(selected);
                 }}
-                className="bg-transparent text-white font-bold outline-none cursor-pointer truncate max-w-[150px]"
+                className="bg-transparent text-white font-bold outline-none cursor-pointer truncate max-w-[130px]"
               >
                 {goals.map((g) => (
                   <option key={g.id} value={g.id} className="text-slate-800 font-medium">
@@ -254,20 +305,33 @@ export default function Dashboard({
                 ))}
               </select>
             </div>
-            <div className="flex items-center space-x-2 shrink-0">
+
+            <div className="flex items-center space-x-1.5 shrink-0">
+              {/* Manage Routine / Predefined Tasks */}
+              <button
+                onClick={() => setShowGoalEditModal(true)}
+                className="flex items-center space-x-1 text-[11px] font-bold text-white bg-white/20 hover:bg-white/30 px-2 py-1 rounded-xl transition-all active:scale-95"
+                title="Edit Goal Schedule & Predefined Routine"
+              >
+                <Settings className="w-3 h-3 text-[#FFDDD2]" />
+                <span>Routine</span>
+              </button>
+
+              {/* Share Settings */}
               <button
                 onClick={() => setShowPrivacyModal(true)}
                 className="flex items-center space-x-1 text-[11px] font-bold text-white bg-white/20 hover:bg-white/30 px-2 py-1 rounded-xl transition-all active:scale-95"
-                title="Goal Privacy & Squad Sharing"
+                title="Goal Privacy & Permissions"
               >
                 <Shield className="w-3 h-3 text-[#FFDDD2]" />
-                <span>Share Settings</span>
+                <span>Share</span>
               </button>
+
               <button
                 onClick={() => setShowCreateGoalModal(true)}
-                className="text-[11px] font-bold text-[#FFDDD2] hover:underline"
+                className="text-[11px] font-bold text-[#FFDDD2] hover:underline pl-0.5"
               >
-                + New Goal
+                +
               </button>
             </div>
           </div>
@@ -277,7 +341,7 @@ export default function Dashboard({
         <div className="flex items-center justify-between bg-black/20 rounded-2xl p-2 backdrop-blur-md border border-white/10">
           <button
             onClick={() => shiftDate(-1)}
-            className="p-1.5 rounded-xl hover:bg-white/10 text-white transition-colors"
+            className="p-1.5 rounded-xl hover:bg-white/10 text-white transition-colors cursor-pointer"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -293,7 +357,7 @@ export default function Dashboard({
           </div>
           <button
             onClick={() => shiftDate(1)}
-            className="p-1.5 rounded-xl hover:bg-white/10 text-white transition-colors"
+            className="p-1.5 rounded-xl hover:bg-white/10 text-white transition-colors cursor-pointer"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -302,21 +366,20 @@ export default function Dashboard({
 
       {/* Main Content Area */}
       <div className="px-4 -mt-4 space-y-4">
-        {/* If no goals exist yet */}
         {!activeGoal ? (
           <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 text-center space-y-3">
             <div className="w-12 h-12 rounded-2xl bg-[#EDF6F9] flex items-center justify-center mx-auto text-[#006D77]">
               <Database className="w-6 h-6" />
             </div>
-            <h3 className="text-base font-extrabold text-[#006D77]">Connect to Live Backend</h3>
+            <h3 className="text-base font-extrabold text-[#006D77]">No Goals Configured</h3>
             <p className="text-xs text-slate-500 max-w-xs mx-auto">
-              Sign in and create a goal to begin real-time task tracking with PostgreSQL.
+              Create a goal to begin real-time task tracking with PostgreSQL.
             </p>
             <button
-              onClick={onOpenAuth}
+              onClick={() => setShowCreateGoalModal(true)}
               className="w-full py-3 px-4 rounded-xl bg-[#006D77] text-white font-bold text-xs hover:bg-[#04434B] transition-all shadow-md active:scale-95"
             >
-              Sign In / Setup Live Database
+              Create New Goal
             </button>
           </div>
         ) : (
@@ -332,15 +395,17 @@ export default function Dashboard({
                   {completedCount} of {totalCount} Done
                 </h3>
                 <p className="text-xs text-slate-500 font-medium mt-0.5">
-                  {percentage === 100
+                  {isRestDay
+                    ? 'Scheduled Rest Day 🌙'
+                    : percentage === 100
                     ? 'All goals crushed! Time to celebrate 🏆'
                     : `${totalCount - completedCount} tasks remaining today`}
                 </p>
 
-                {percentage === 100 && (
+                {percentage === 100 && !isRestDay && (
                   <button
                     onClick={() => setShowShareModal(true)}
-                    className="mt-3 inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-[#E29578] hover:bg-[#d88465] text-white text-xs font-bold transition-all shadow-sm active:scale-95"
+                    className="mt-3 inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-[#E29578] hover:bg-[#d88465] text-white text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
                   >
                     <Share2 className="w-3.5 h-3.5" />
                     <span>Share Card</span>
@@ -379,73 +444,130 @@ export default function Dashboard({
               </div>
             </div>
 
-            {/* Task List Header */}
+            {/* Live Checklist Header */}
             <div className="flex items-center justify-between pt-2">
               <h4 className="text-sm font-extrabold text-[#006D77] uppercase tracking-wider">
                 Live Daily Checklist
               </h4>
-              <span className="text-xs font-semibold text-[#83C5BE] bg-[#006D77]/10 px-2.5 py-0.5 rounded-full">
-                {totalCount} Active
-              </span>
+              <div className="flex items-center space-x-1.5 text-xs font-semibold">
+                {skippedCount > 0 && (
+                  <span className="text-[#E29578] bg-[#FFDDD2]/40 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                    {skippedCount} Skipped
+                  </span>
+                )}
+                <span className="text-[#83C5BE] bg-[#006D77]/10 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
+                  {totalCount} Total
+                </span>
+              </div>
             </div>
 
-            {/* Tasks List */}
+            {/* Smart Tasks / Rest Day Content */}
             {loading ? (
               <div className="flex flex-col items-center justify-center py-12 space-y-2">
                 <Loader2 className="w-6 h-6 animate-spin text-[#006D77]" />
-                <p className="text-xs text-slate-500 font-medium">Syncing with PostgreSQL...</p>
+                <p className="text-xs text-slate-500 font-medium">Syncing schedule with PostgreSQL...</p>
+              </div>
+            ) : isRestDay ? (
+              /* Rest Day Empty State */
+              <div className="bg-white rounded-3xl p-8 text-center border border-gray-100 shadow-sm space-y-3">
+                <div className="w-14 h-14 rounded-2xl bg-[#EDF6F9] text-[#006D77] flex items-center justify-center mx-auto shadow-inner">
+                  <Moon className="w-7 h-7" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-[#006D77]">Rest Day: No Tasks Scheduled</h3>
+                  <p className="text-xs text-slate-500 max-w-xs mx-auto font-medium mt-1 leading-relaxed">
+                    Scheduled recovery day according to your weekly frequency. Rebuild your energy and prepare for tomorrow's discipline.
+                  </p>
+                </div>
+                <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-[#EDF6F9] text-[#006D77] text-xs font-bold">
+                  <Sparkles className="w-3.5 h-3.5 text-[#E29578]" />
+                  <span>Intentional Recovery & Clarity</span>
+                </div>
               </div>
             ) : tasks.length === 0 ? (
               <div className="bg-white rounded-2xl p-8 text-center border border-dashed border-gray-200">
                 <AlertCircle className="w-8 h-8 text-[#83C5BE] mx-auto mb-2" />
                 <p className="text-sm font-bold text-slate-700">No tasks logged for today</p>
                 <p className="text-xs text-slate-500 mt-1">
-                  Tap the (+) button below to add a live ad-hoc goal!
+                  Tap the (+) button below to add an ad-hoc goal or edit your routine!
                 </p>
               </div>
             ) : (
               <div className="space-y-2.5">
                 {tasks.map((task) => {
                   const taskId = task.taskId || task.id;
+                  const isCompleted = task.status === 'COMPLETED' || task.isCompleted;
+                  const isSkipped = task.status === 'SKIPPED';
+
                   return (
                     <div
                       key={taskId}
                       onClick={() => handleToggleTask(task)}
                       className={`flex items-center justify-between p-4 rounded-2xl transition-all cursor-pointer select-none border ${
-                        task.isCompleted
-                          ? 'bg-[#EDF6F9]/60 border-[#83C5BE]/30 text-slate-500'
+                        isCompleted
+                          ? 'bg-[#EDF6F9]/70 border-[#83C5BE]/40 text-slate-500'
+                          : isSkipped
+                          ? 'bg-amber-50/40 border-amber-200/60 text-slate-400'
                           : 'bg-white border-gray-100 hover:border-[#83C5BE]/50 shadow-sm text-slate-800'
                       }`}
                     >
                       <div className="flex items-center space-x-3.5 min-w-0 pr-2">
+                        {/* Toggle Checkbox Button */}
                         <div className="shrink-0 transition-transform active:scale-90">
-                          {task.isCompleted ? (
+                          {isCompleted ? (
                             <CheckCircle2 className="w-6 h-6 text-[#006D77] fill-[#83C5BE]/40" />
+                          ) : isSkipped ? (
+                            <FastForward className="w-6 h-6 text-amber-500" />
                           ) : (
                             <Circle className="w-6 h-6 text-slate-300 hover:text-[#006D77]" />
                           )}
                         </div>
+
                         <div className="min-w-0">
                           <p
                             className={`text-sm font-semibold truncate ${
-                              task.isCompleted ? 'line-through text-slate-400' : 'text-slate-800'
+                              isCompleted || isSkipped
+                                ? 'line-through text-slate-400'
+                                : 'text-slate-800'
                             }`}
                           >
                             {task.taskContent || task.title}
                           </p>
-                          {task.isAdHoc && (
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#E29578] bg-[#FFDDD2]/40 px-2 py-0.5 rounded-md mt-0.5 inline-block">
-                              AD-HOC
-                            </span>
-                          )}
+                          <div className="flex items-center space-x-1.5 mt-0.5">
+                            {task.isAdHoc && (
+                              <span className="text-[9px] font-bold uppercase tracking-wider text-[#E29578] bg-[#FFDDD2]/40 px-1.5 py-0.5 rounded-md">
+                                AD-HOC
+                              </span>
+                            )}
+                            {isSkipped && (
+                              <span className="text-[9px] font-bold uppercase tracking-wider text-amber-700 bg-amber-100/70 px-1.5 py-0.5 rounded-md">
+                                SKIPPED
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
 
-                      {task.isCompleted && (
-                        <span className="text-[10px] font-extrabold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full shrink-0">
-                          DONE
-                        </span>
-                      )}
+                      {/* Right Action: Done Badge or Skip Action Button */}
+                      <div className="flex items-center space-x-1.5 shrink-0">
+                        {isCompleted ? (
+                          <span className="text-[10px] font-extrabold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+                            DONE
+                          </span>
+                        ) : (
+                          <button
+                            onClick={(e) => handleSkipTask(task, e)}
+                            className={`px-2.5 py-1 rounded-xl text-[10px] font-extrabold transition-all active:scale-95 ${
+                              isSkipped
+                                ? 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                                : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200/60'
+                            }`}
+                            title={isSkipped ? 'Reactivate Task' : 'Skip Task for Today'}
+                          >
+                            {isSkipped ? 'Unskip' : 'Skip'}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -456,10 +578,10 @@ export default function Dashboard({
       </div>
 
       {/* Floating Action Button (FAB) for Ad-Hoc Tasks */}
-      {activeGoal && dailyLog && (
+      {activeGoal && dailyLog && !isRestDay && (
         <button
           onClick={() => setShowAddModal(true)}
-          className="fixed bottom-20 right-6 w-14 h-14 rounded-full bg-[#006D77] hover:bg-[#04434B] text-white shadow-xl flex items-center justify-center transition-transform active:scale-90 z-30 border-2 border-white"
+          className="fixed bottom-20 right-6 w-14 h-14 rounded-full bg-[#006D77] hover:bg-[#04434B] text-white shadow-xl flex items-center justify-center transition-transform active:scale-90 z-30 border-2 border-white cursor-pointer"
           aria-label="Add Ad-Hoc Task"
         >
           <Plus className="w-7 h-7" />
@@ -489,14 +611,14 @@ export default function Dashboard({
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-slate-600 font-semibold text-xs hover:bg-gray-50"
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-slate-600 font-semibold text-xs hover:bg-gray-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={!adHocContent.trim() || isSubmittingTask}
-                  className="flex-1 py-2.5 rounded-xl bg-[#006D77] text-white font-bold text-xs hover:bg-[#04434B] disabled:opacity-50"
+                  className="flex-1 py-2.5 rounded-xl bg-[#006D77] text-white font-bold text-xs hover:bg-[#04434B] disabled:opacity-50 cursor-pointer"
                 >
                   {isSubmittingTask ? 'Saving...' : 'Save to DB'}
                 </button>
@@ -529,14 +651,14 @@ export default function Dashboard({
                 <button
                   type="button"
                   onClick={() => setShowCreateGoalModal(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-slate-600 font-semibold text-xs hover:bg-gray-50"
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-slate-600 font-semibold text-xs hover:bg-gray-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={!newGoalTitle.trim()}
-                  className="flex-1 py-2.5 rounded-xl bg-[#006D77] text-white font-bold text-xs hover:bg-[#04434B] disabled:opacity-50"
+                  className="flex-1 py-2.5 rounded-xl bg-[#006D77] text-white font-bold text-xs hover:bg-[#04434B] disabled:opacity-50 cursor-pointer"
                 >
                   Create Goal
                 </button>
@@ -561,6 +683,17 @@ export default function Dashboard({
         isOpen={showPrivacyModal}
         onClose={() => setShowPrivacyModal(false)}
         goal={activeGoal}
+      />
+
+      {/* Goal & Predefined Routine Edit Modal */}
+      <GoalEditModal
+        isOpen={showGoalEditModal}
+        onClose={() => setShowGoalEditModal(false)}
+        goal={activeGoal}
+        onGoalUpdated={(updated) => {
+          onSelectGoal(updated);
+          fetchTasks();
+        }}
       />
     </div>
   );
